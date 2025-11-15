@@ -214,6 +214,36 @@ while running:
 
                     elif selected_city:  # 如果已经选中城市 → 检查按钮
                         rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
+                        # 城市升级按钮区域
+                        rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
+                        upgrade_rect = pygame.Rect(rect_bg.right + 10, rect_bg.top, 100, 40)
+
+                        if upgrade_rect.collidepoint(pos):
+                            sr, sc, owner, hp, level = selected_city
+
+                            # 只有当前阵营能升级
+                            if owner == current_player:
+
+                                # 等级上限 3
+                                if level >= 3:
+                                    print("城市已达到最高等级")
+                                else:
+                                    cost = 300
+                                    res = get_player_resources(current_player)
+
+                                    if res >= cost:
+                                        # 扣资源
+                                        set_player_resources(current_player, res - cost)
+
+                                        # 升级城市
+                                        # ⚠️ 因为 cities 是 tuple list，需要重建 tuple
+                                        for i, c in enumerate(cities):
+                                            if c[0] == sr and c[1] == sc:
+                                                cities[i] = (sr, sc, owner, hp, level + 1)
+                                                selected_city = cities[i]  # 同步更新选中状态
+                                                break
+
+                                        print("城市成功升级到 Level", level + 1)
 
                         # 点击兵种按钮
                         for unit_type, rect in menu_buttons.items():

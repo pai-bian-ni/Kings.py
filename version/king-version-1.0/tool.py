@@ -236,12 +236,15 @@ def draw_map(screen, soldiers, cities, current_player, turn_count, selected_city
         owner = selected_city[2]
         hp = selected_city[3]
         level = selected_city[4]
-        btn_rect = pygame.Rect(screen.get_width() - 150, 150, 120, 40)
-        pygame.draw.rect(screen, (100, 100, 180), btn_rect)
-        font_small = pygame.font.SysFont(None, 24)
-        font_mid = pygame.font.SysFont(None, 28)
-        txt = font_small.render(f"Level: {level}", True, (255, 255, 255))
-        screen.blit(txt, (btn_rect.x + 10, btn_rect.y + 10))
+        # 获取菜单背景 rect_bg
+        rect_bg, buttons = get_city_menu_buttons(screen, selected_city)
+
+        # 城市升级按钮放在菜单右边
+        upgrade_rect = pygame.Rect(rect_bg.right + 10, rect_bg.top, 100, 40)
+        pygame.draw.rect(screen, (180, 120, 50), upgrade_rect)
+
+        txt = font.render(f"Lv {level}", True, WHITE)
+        screen.blit(txt, (upgrade_rect.x + 10, upgrade_rect.y + 8))
 
     # 飘字（本回合）
     draw_floating_texts(screen, floating_texts)
