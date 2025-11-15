@@ -291,6 +291,19 @@ while running:
 
         # 移动所有士兵
         soldiers, cities = move_soldiers(soldiers, cities, floating_texts, player_upgrades)
+        # === 检查国王城是否被摧毁 ===
+        alive_green_king = any((c[0] == green_king_pos[0] and c[1] == green_king_pos[1] and c[3] > 0) for c in cities)
+        alive_red_king = any((c[0] == red_king_pos[0] and c[1] == red_king_pos[1] and c[3] > 0) for c in cities)
+
+        if not alive_green_king or not alive_red_king:
+            draw_map(screen, soldiers, cities, current_player, turn_count, selected_city, floating_texts)
+            pygame.display.flip()
+            pygame.time.wait(1000)
+            winner = "Red" if not alive_green_king else "Green"
+            game_over_screen(winner)
+            pygame.quit()
+            raise SystemExit
+
     # 绘制
     draw_map(screen, soldiers, cities, current_player, turn_count, selected_city, floating_texts)
 
