@@ -5,6 +5,8 @@ pygame.init()
 screen = pygame.display.set_mode((1100, 800))
 clock = pygame.time.Clock()
 
+gameTime = 0
+
 import os, sys, pygame
 
 def resource_path(relative_path):
@@ -153,8 +155,8 @@ while running:
             running = False
 
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_RETURN:   # Enter → 结束回合
-                end_turn()
+            if event.key == pygame.K_SPACE:  # 按下空格键切换阵营
+                current_player = 1 - current_player  # 切换阵营
             elif event.key == pygame.K_p:      # P → 空降兵模式
                 placing_paratrooper = True
                 placing_cannon = False
@@ -247,6 +249,15 @@ while running:
                                 break
                         # ⚠️ 不再写 selected_city = None，这样菜单会保持
 
+    current_time = pygame.time.get_ticks()
+    if current_time - gameTime >= 1000:
+        gameTime = current_time  # 更新游戏时间
+        # 增加资源
+        green_resources += 50
+        red_resources += 50
+
+        # 移动所有士兵
+        soldiers, cities = move_soldiers(soldiers, cities, floating_texts, player_upgrades)
     # 绘制
     draw_map(screen, soldiers, cities, current_player, turn_count, selected_city, floating_texts)
 
