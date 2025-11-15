@@ -4,8 +4,8 @@ from tool import *
 pygame.init()
 screen = pygame.display.set_mode((1100, 800))
 clock = pygame.time.Clock()
-
 gameTime = 0
+
 
 import os, sys, pygame
 
@@ -249,7 +249,10 @@ while running:
                                 break
                         # ⚠️ 不再写 selected_city = None，这样菜单会保持
 
+    # 获取当前时间
     current_time = pygame.time.get_ticks()
+
+    # 每过1秒（1000毫秒），更新资源和移动士兵
     if current_time - gameTime >= 1000:
         gameTime = current_time  # 更新游戏时间
         # 增加资源
