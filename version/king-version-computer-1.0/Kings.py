@@ -1,23 +1,30 @@
-# Kings.py  （已修改：加入 Player vs Computer、启动弹窗、AI 下兵）
 from tool import *
 
-import pygame, os, sys, time
+
 pygame.init()
 screen = pygame.display.set_mode((1100, 800))
 clock = pygame.time.Clock()
 gameTime = 0
+
+
+import os, sys, pygame
 
 def resource_path(relative_path):
     """获取资源文件的绝对路径，兼容 PyInstaller 打包后"""
     if hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
     else:
+        # Kings.py 所在目录的上两级目录
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     return os.path.join(base_path, relative_path)
 
+# 设置窗口标题
 pygame.display.set_caption("Kings")
 
+# 设置窗口图标
 icon_path = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "Assets", "icon1.ico"))
+
 if os.path.exists(icon_path):
     try:
         icon_surface = pygame.image.load(icon_path)
@@ -27,6 +34,9 @@ if os.path.exists(icon_path):
         print("加载图标失败:", e)
 else:
     print("图标文件不存在:", icon_path)
+
+
+
 
 # 初始数据
 # 城市：(row, col, owner, hp, level)
@@ -42,8 +52,7 @@ cities = [
 # 士兵列表：(row, col, owner, hp, tr, tc, unit_type)
 soldiers = []
 
-# Important: 红方 (1) 是 玩家，绿方 (0) 是 电脑
-current_player = 1   # 1 = Red (player) ; 0 = Green (AI)
+current_player = 0   # 0=Green, 1=Red
 turn_count = 1
 selected_city = None
 floating_texts = []  # (row, col, text, color)
@@ -52,17 +61,18 @@ floating_texts = []  # (row, col, text, color)
 green_resources = 500
 red_resources = 500
 
-# 空降/大炮放置模式
+# 空降兵放置模式
 placing_paratrooper = False
+
 placing_cannon = False
+
 
 font_small = pygame.font.SysFont(None, 24)
 font_mid = pygame.font.SysFont(None, 28)
 
-# player_upgrades 来自 tool.py 的声明，但为保险起见保留局部引用
 player_upgrades = {
-    0: {"hp": 0, "hurt": 0, "speed": 0},  # 绿色（AI）
-    1: {"hp": 0, "hurt": 0, "speed": 0},  # 红色（玩家）
+    0: {"hp": 0, "hurt": 0, "speed": 0},  # 绿色
+    1: {"hp": 0, "hurt": 0, "speed": 0},  # 红色
 }
 
 upgrade_buttons = {
@@ -73,12 +83,15 @@ upgrade_buttons = {
 
 print("当前兵种菜单：", list(UNIT_CONFIG.keys()))
 
+
 def create_cannon(row, col, owner, cities):
     return (row, col, owner, 100, row, col, "cannon")
+
 
 def log_event(message):
     with open("game.log", "a", encoding="utf-8") as f:
         f.write(message + "\n")
+
 
 def get_player_resources(player):
     return green_resources if player == 0 else red_resources
@@ -96,6 +109,37 @@ def get_city_at(row, col):
             return c
     return None
 
+def end_turn():
+    global current_player, turn_count, soldiers, cities, floating_texts, green_resources, red_resources
+
+    # 回合开始给每位玩家 +100 资源（简单经济系统）
+    if current_player == 0:
+        green_resources += 100
+    else:
+        red_resources += 100
+
+    # 推进战斗与移动
+    soldiers, cities = move_soldiers(soldiers, cities, floating_texts, player_upgrades)
+
+    # 检查国王城是否被摧毁
+    alive_green_king = any((c[0] == green_king_pos[0] and c[1] == green_king_pos[1] and c[3] > 0) for c in cities)
+    alive_red_king   = any((c[0] == red_king_pos[0]   and c[1] == red_king_pos[1]   and c[3] > 0) for c in cities)
+    if not alive_green_king or not alive_red_king:
+        draw_map(screen, soldiers, cities, current_player, turn_count, selected_city, floating_texts)
+        pygame.display.flip()
+        pygame.time.wait(1000)
+        winner = "Red" if not alive_green_king else "Green"
+        game_over_screen(winner)
+        pygame.quit()
+        raise SystemExit
+
+    # 清理本回合飘字
+    floating_texts.clear()
+
+    # 轮换玩家
+    current_player = 1 - current_player
+    turn_count += 1
+
 def game_over_screen(winner):
     screen.fill((10, 10, 20))
     txt = pygame.font.SysFont(None, 72).render(f"{winner} Player Wins!", True, (255, 80, 80))
@@ -103,111 +147,7 @@ def game_over_screen(winner):
     pygame.display.flip()
     pygame.time.wait(3000)
 
-# === 启动弹窗（模态） ===
-def show_start_modal(screen):
-    sw, sh = screen.get_size()
-    modal_w, modal_h = 520, 220
-    modal_x = (sw - modal_w) / 2
-    modal_y = (sh - modal_h) / 2
-    btn_rect = pygame.Rect(modal_x + modal_w/2 - 60, modal_y + modal_h - 70, 120, 40)
-    running_modal = True
-    while running_modal:
-        for ev in pygame.event.get():
-            if ev.type == pygame.QUIT:
-                pygame.quit()
-                raise SystemExit
-            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                if btn_rect.collidepoint(ev.pos):
-                    running_modal = False
 
-        # 背景模糊/暗化
-        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-        overlay.fill((10, 20, 40, 180))
-        screen.blit(overlay, (0,0))
-
-        # 卡片（蔚蓝档案风格：简洁、蓝灰、圆角）
-        card = pygame.Surface((modal_w, modal_h), pygame.SRCALPHA)
-        # 圆角背景
-        rect = pygame.Rect(0,0,modal_w,modal_h)
-        pygame.draw.rect(card, (220, 240, 255), rect, border_radius=14)
-        pygame.draw.rect(card, (40, 120, 200), rect, width=2, border_radius=14)
-        # 标题
-        title_font = pygame.font.SysFont(None, 36)
-        title = title_font.render("Notice", True, (20, 40, 80))
-        card.blit(title, (20, 16))
-        # 内容
-        body_font = pygame.font.SysFont(None, 26)
-        body = body_font.render("Player versus computer", True, (30, 50, 90))
-        card.blit(body, (20, 70))
-        # 按钮
-        pygame.draw.rect(card, (60, 140, 200), (btn_rect.x - modal_x, btn_rect.y - modal_y, btn_rect.w, btn_rect.h), border_radius=8)
-        btn_txt = body_font.render("Confirm", True, (255,255,255))
-        card.blit(btn_txt, (btn_rect.x - modal_x + (btn_rect.w - btn_txt.get_width())/2, btn_rect.y - modal_y + (btn_rect.h - btn_txt.get_height())/2))
-
-        # 投影/贴到主屏幕
-        screen.blit(card, (modal_x, modal_y))
-        pygame.display.flip()
-        clock.tick(60)
-
-# 调用弹窗（在主循环前）
-show_start_modal(screen)
-
-# === AI 相关函数 ===
-def ai_take_action():
-    """
-    电脑（绿方 owner=0）每次 tick（1秒）后调用。
-    规则：
-    - 如果棋盘上没有敌军（红方），则在王城生成 soldier（若资源足够）
-    - 否则统计红方在左半区/右半区数量（col < 10 为左）
-      若左边敌军更多 -> 在左侧绿方城市生成 soldier（若没有左侧城市则退回王城）
-      否则在右侧绿方城市生成 soldier（若没有右侧城市则退回王城）
-    """
-    global soldiers, cities, green_resources
-    # cost
-    s_cost = UNIT_CONFIG.get("soldier", {}).get("cost", 300)
-
-    # 统计红方（player）单位
-    red_units = [s for s in soldiers if s[2] == 1]
-    if len(red_units) == 0:
-        # 没有敌军 -> 在王城生成
-        if green_resources >= s_cost:
-            r, c = green_king_pos
-            soldiers.append(create_unit("soldier", r, c, 0, cities))
-            green_resources -= s_cost
-            log_event("AI: no enemies -> spawn soldier at green king")
-        return
-
-    left_count = sum(1 for s in red_units if s[1] < 10)
-    right_count = sum(1 for s in red_units if s[1] >= 10)
-
-    # 选择目标侧
-    target_side = "left" if left_count >= right_count else "right"
-
-    # 查找对应侧可用的绿方城市（col<10 为左）
-    candidate = None
-    if target_side == "left":
-        for c in cities:
-            if c[2] == 0 and c[1] < 10:
-                candidate = c
-                break
-    else:
-        for c in cities:
-            if c[2] == 0 and c[1] >= 10:
-                candidate = c
-                break
-
-    if candidate is None:
-        # 没有对应侧城市 -> 退回王城
-        r, c = green_king_pos
-    else:
-        r, c = candidate[0], candidate[1]
-
-    if green_resources >= s_cost:
-        soldiers.append(create_unit("soldier", r, c, 0, cities))
-        green_resources -= s_cost
-        log_event(f"AI: spawn soldier at ({r},{c}) side={target_side}")
-
-# === 主循环 ===
 running = True
 while running:
     for event in pygame.event.get():
@@ -215,13 +155,12 @@ while running:
             running = False
 
         elif event.type == pygame.KEYDOWN:
-            # 禁用空格切换（玩家不能切换阵营）
-            # if event.key == pygame.K_SPACE:
-            #     current_player = 1 - current_player
-            if event.key == pygame.K_p:
+            if event.key == pygame.K_SPACE:  # 按下空格键切换阵营
+                current_player = 1 - current_player  # 切换阵营
+            elif event.key == pygame.K_p:      # P → 空降兵模式
                 placing_paratrooper = True
                 placing_cannon = False
-            elif event.key == pygame.K_f:
+            elif event.key == pygame.K_f:      # F → 大炮模式
                 placing_cannon = True
                 placing_paratrooper = False
 
@@ -229,8 +168,8 @@ while running:
             pos = event.pos
             cell = get_cell_from_mouse(pos, screen)
 
-            # 左侧 DLC 升级按钮（玩家可点）
-            if pos[0] < 150:
+            # ==== DLC 左侧升级按钮 ====
+            if pos[0] < 150:  # 左边 UI 区域
                 for key, rect in upgrade_buttons.items():
                     if rect.collidepoint(pos):
                         res = get_player_resources(current_player)
@@ -245,7 +184,8 @@ while running:
                             set_player_resources(current_player, res - 500)
                         break
 
-            # 空降模式
+
+            # ==== 空降兵模式 ====
             elif placing_paratrooper and cell:
                 r, c = cell
                 res = get_player_resources(current_player)
@@ -254,7 +194,7 @@ while running:
                     set_player_resources(current_player, res - UNIT_CONFIG["paratrooper"]["cost"])
                 placing_paratrooper = False
 
-            # 大炮模式
+            # ==== 大炮模式 ====
             elif placing_cannon and cell:
                 r, c = cell
                 res = get_player_resources(current_player)
@@ -263,41 +203,49 @@ while running:
                     set_player_resources(current_player, res - UNIT_CONFIG["cannon"]["cost"])
                 placing_cannon = False
 
-            # 普通点击（城市选择 / 菜单）
+            # ==== 普通点击 ====
             else:
                 if cell:
                     r, c = cell
                     city = get_city_at(r, c)
 
-                    if city:
-                        # 仅玩家（红方 current_player==1）能打开并操作菜单
-                        # 但 selected_city 可以显示给所有人
+                    if city:  # 点击城市 → 打开菜单
                         selected_city = city
 
-                    elif selected_city:
+                    elif selected_city:  # 如果已经选中城市 → 检查按钮
                         rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
-
-                        # 城市升级按钮改放在菜单右侧，检测其位置
+                        # 城市升级按钮区域
+                        rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
                         upgrade_rect = pygame.Rect(rect_bg.right + 10, rect_bg.top, 100, 40)
+
                         if upgrade_rect.collidepoint(pos):
                             sr, sc, owner, hp, level = selected_city
-                            # 只有玩家自己的城市才能由玩家升级
+
+                            # 只有当前阵营能升级
                             if owner == current_player:
+
+                                # 等级上限 3
                                 if level >= 3:
                                     print("城市已达到最高等级")
                                 else:
                                     cost = 300
                                     res = get_player_resources(current_player)
+
                                     if res >= cost:
+                                        # 扣资源
                                         set_player_resources(current_player, res - cost)
+
+                                        # 升级城市
+                                        # ⚠️ 因为 cities 是 tuple list，需要重建 tuple
                                         for i, c in enumerate(cities):
                                             if c[0] == sr and c[1] == sc:
                                                 cities[i] = (sr, sc, owner, hp, level + 1)
-                                                selected_city = cities[i]
+                                                selected_city = cities[i]  # 同步更新选中状态
                                                 break
+
                                         print("城市成功升级到 Level", level + 1)
 
-                        # 兵种按钮
+                        # 点击兵种按钮
                         for unit_type, rect in menu_buttons.items():
                             if rect.collidepoint(pos):
                                 sr, sc, owner, hp, level = selected_city
@@ -309,14 +257,16 @@ while running:
                                         set_player_resources(current_player, res - cost)
                                 break
                         else:
+                            # 如果点在菜单框外 → 关闭菜单
                             if not rect_bg.collidepoint(pos):
                                 selected_city = None
                     else:
                         selected_city = None
-                else:
-                    # 点击棋盘外的菜单按钮也允许生产
+
+                else:  # 点击棋盘外
                     if selected_city:
                         rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
+                        # 如果点到菜单按钮 → 正常处理
                         for unit_type, rect in menu_buttons.items():
                             if rect.collidepoint(pos):
                                 sr, sc, owner, hp, level = selected_city
@@ -327,25 +277,24 @@ while running:
                                         soldiers.append(create_unit(unit_type, sr, sc, owner, cities))
                                         set_player_resources(current_player, res - cost)
                                 break
-                        # 保持菜单打开（不自动关闭）
+                        # ⚠️ 不再写 selected_city = None，这样菜单会保持
 
-    # 时间与每秒动作
+    # 获取当前时间
     current_time = pygame.time.get_ticks()
+
+    # 每过1秒（1000毫秒），更新资源和移动士兵
     if current_time - gameTime >= 1000:
-        gameTime = current_time
-        # 每秒资源 +50
+        gameTime = current_time  # 更新游戏时间
+        # 增加资源
         green_resources += 50
         red_resources += 50
 
-        # 士兵推进（移动/攻击/城市攻击/清理）
+        # 移动所有士兵
         soldiers, cities = move_soldiers(soldiers, cities, floating_texts, player_upgrades)
-
-        # AI 操作（绿方）
-        ai_take_action()
-
-        # 胜负检测（每秒）
+        # === 检查国王城是否被摧毁 ===
         alive_green_king = any((c[0] == green_king_pos[0] and c[1] == green_king_pos[1] and c[3] > 0) for c in cities)
-        alive_red_king   = any((c[0] == red_king_pos[0]   and c[1] == red_king_pos[1]   and c[3] > 0) for c in cities)
+        alive_red_king = any((c[0] == red_king_pos[0] and c[1] == red_king_pos[1] and c[3] > 0) for c in cities)
+
         if not alive_green_king or not alive_red_king:
             draw_map(screen, soldiers, cities, current_player, turn_count, selected_city, floating_texts)
             pygame.display.flip()
@@ -362,7 +311,7 @@ while running:
     pygame.draw.rect(screen, (35,35,45), (10, 50, 380, 70))
     res_text = font_mid.render(f"Green: {green_resources}      Red: {red_resources}", True, (230,230,240))
     screen.blit(res_text, (20, 60))
-    tip_text = font_small.render("P: Paratrooper Mode   F: Cannon Mode (Space disabled)", True, (200, 200, 210))
+    tip_text = font_small.render("ENTER: End Turn   P: Paratrooper Mode   F: Cannon Mode", True, (200, 200, 210))
     screen.blit(tip_text, (20, 90))
 
     if placing_paratrooper:
@@ -373,26 +322,19 @@ while running:
         on_text = font_small.render("Cannon MODE: Click within own city range (cost 700)", True, (255, 200, 100))
         screen.blit(on_text, (20, 135))
 
-    # 左侧升级按钮（玩家可用）
+    # 绘制升级按钮
     pygame.draw.rect(screen, (80, 160, 80), upgrade_buttons["hp"])
     pygame.draw.rect(screen, (160, 80, 80), upgrade_buttons["hurt"])
     pygame.draw.rect(screen, (80, 80, 160), upgrade_buttons["speed"])
+
     txt1 = font_small.render("HP+10 (300)", True, (255,255,255))
     txt2 = font_small.render("Hurt+5 (300)", True, (255,255,255))
     txt3 = font_small.render("Speed+1 (500)", True, (255,255,255))
+
     screen.blit(txt1, (upgrade_buttons["hp"].x + 5, upgrade_buttons["hp"].y + 10))
     screen.blit(txt2, (upgrade_buttons["hurt"].x + 5, upgrade_buttons["hurt"].y + 10))
     screen.blit(txt3, (upgrade_buttons["speed"].x + 5, upgrade_buttons["speed"].y + 10))
 
-    # 如果选中城市，绘制升级按钮（菜单右侧）
-    if selected_city:
-        rect_bg, menu_buttons = get_city_menu_buttons(screen, selected_city)
-        # 城市等级文本（仍然保留原显示）
-        sr, sc, owner, hp, level = selected_city
-        btn_rect = pygame.Rect(rect_bg.right + 10, rect_bg.top, 100, 40)
-        pygame.draw.rect(screen, (100, 100, 180), btn_rect)
-        txt = font_small.render(f"Lv {level}", True, (255,255,255))
-        screen.blit(txt, (btn_rect.x + 10, btn_rect.y + 10))
 
     pygame.display.flip()
     clock.tick(60)
