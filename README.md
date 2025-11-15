@@ -1,3 +1,3 @@
 Nothing
-Toggle turns with the spacebar
+Press "space" to change turns.
 Thanks for your playing.
